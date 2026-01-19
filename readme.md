@@ -271,6 +271,19 @@ spec:
     secret: portainer-basic-auth
 ---
 
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portainer-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: portainer
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
 EOF
 
 # Type in the password you want to the htpasswd command
