@@ -189,6 +189,9 @@ sudo kubectl apply -f hello-world-service.yaml
 # It has an SSL cert and returns the result of your container, "image: hashicorp/http-echo" with the argument "-text=hello from ozan's k3s"
 # If we had instead made that deployment a "image: syncfusion/word-processor-server", we'd be seeing their software running with no special configuration.
 
+# Import some Middleware resource definitions
+sudo kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v2.10/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+
 
 # One final adventure - we will be setting up a web UI to manage the cluster.
 # This entails running a google web UI and creating HTTP basic auth over SSL,
@@ -197,9 +200,9 @@ sudo kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.
 # See the created Pods
 sudo kubectl get pods -n kubernetes-dashboard
 
+# We define our own kind:Service of name:kubernetes-dashboard below, so we delete the pre-existing one
+sudo kubectl delete svc kubernetes-dashboard -n kubernetes-dashboard
 
-# Import some Middleware resource definitions
-kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v2.10/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
 
 # We will write down the service account, Ingress controller, and a middleware which checks the password
 # as its own yaml file.
@@ -216,8 +219,8 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-http01
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.middlewares: kubernetes-dashboard-auth@kubernetescrd
-    traefik.ingress.kubernetes.io/service.serversscheme: https
-    traefik.ingress.kubernetes.io/service.serverstransport: kubernetes-dashboard-dashboard-transport@kubernetescrd
+    traefik.ingress.kubernetes.io/service.serversscheme: http
+    traefik.ingress.kubernetes.io/service.serverstransport: dashboard-transport@kubernetescrd
 spec:
   tls:
   - hosts:
@@ -233,11 +236,12 @@ spec:
           service:
             name: kubernetes-dashboard
             port:
-              number: 443
+              name: https-dashboard
+
 
 ---
 
-apiVersion: traefik.io/v1alpha1
+apiVersion: traefik.containo.us/v1alpha1
 kind: ServersTransport
 metadata:
   name: dashboard-transport
@@ -250,7 +254,7 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: auth
+  name: kubernetes-dashboard-auth
   namespace: kubernetes-dashboard
 spec:
   basicAuth:
@@ -281,6 +285,48 @@ subjects:
 
 ---
 
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  selector:
+    k8s-app: kubernetes-dashboard
+  ports:
+    - name: https-dashboard
+      port: 443
+      targetPort: 8443
+#   type: ClusterIP
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: kubernetes-dashboard
+    spec:
+      containers:
+      - name: kubernetes-dashboard
+        image: kubernetesui/dashboard:v2.7.0
+        ports:
+        - containerPort: 8443
+        args:
+          - --auto-generate-certificates
+          - --enable-skip-login=true
+          - --enable-insecure-login=true
+          - --metrics-provider=k8s
+
 EOF
 
 # We can Create the referenced Kubernetes secret by running the following
@@ -289,6 +335,10 @@ sudo kubectl create secret generic dashboard-basic-auth --from-literal=users="$(
 sudo kubectl apply -f dashboard-access-data.yaml
 
 
+
+
+# Misc Notes
+kubectl delete deploy kubernetes-dashboard -n kubernetes-dashboard
 
 
 ```
