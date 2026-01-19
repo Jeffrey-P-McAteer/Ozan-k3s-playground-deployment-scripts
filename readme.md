@@ -45,6 +45,9 @@ sudo systemctl restart sshd
 sudo apt update
 sudo apt install -y curl ca-certificates gnupg lsb-release
 
+# Misc other utilities
+sudo apt-get install -y apache2-utils
+
 # Open firewall for k3s resources we create
 sudo ufw allow 80   # http
 sudo ufw allow 443  # https
@@ -52,6 +55,13 @@ sudo ufw allow 6443 # kubectl
 
 # Bring a Google contractor in to do the k3s install
 curl -sfL https://get.k3s.io | sh -
+
+# We are also going to add Helm for later use - this is a Kubernetes templating engine, because the tower of abstractions isn't tall enough until you re-create C macros.
+sudo apt-get install -y curl gpg apt-transport-https
+curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+sudo apt-get update
+sudo apt-get install -y helm
 
 # Check that "control-plane" node (that's this machine! \o/) and "traefik-*" pod exists (internal kubernetes magic)
 sudo kubectl get nodes
@@ -178,6 +188,92 @@ sudo kubectl apply -f hello-world-service.yaml
 # Now open https://hello-world.ozan.jmcateer.com in a browser, curl, etc.
 # It has an SSL cert and returns the result of your container, "image: hashicorp/http-echo" with the argument "-text=hello from ozan's k3s"
 # If we had instead made that deployment a "image: syncfusion/word-processor-server", we'd be seeing their software running with no special configuration.
+
+
+# One final adventure - we will be setting up a web UI to manage the cluster.
+# This entails running a google web UI and creating HTTP basic auth over SSL,
+# and we're just going to hard-code a username/password at this time to keep auth simple.
+sudo kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+# See the created Pods
+sudo kubectl get pods -n kubernetes-dashboard
+
+
+# Import some Middleware resource definitions
+kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v2.10/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+
+# We will write down the service account, Ingress controller, and a middleware which checks the password
+# as its own yaml file.
+# The dashboard will end up being accessible at https://dashboard.ozan.jmcateer.com
+
+vim dashboard-access-data.yaml
+cat <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubernetes-dashboard
+  namespace: kubernetes-dashboard
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-http01
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: kubernetes-dashboard-auth@kubernetescrd
+spec:
+  tls:
+  - hosts:
+    - dashboard.ozan.jmcateer.com
+    secretName: dashboard-tls
+  rules:
+  - host: dashboard.ozan.jmcateer.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kubernetes-dashboard
+            port:
+              number: 443
+
+---
+
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: auth
+  namespace: kubernetes-dashboard
+spec:
+  basicAuth:
+    secret: dashboard-basic-auth
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard-user
+  namespace: kubernetes-dashboard
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dashboard-user-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: dashboard-user
+  namespace: kubernetes-dashboard
+
+EOF
+
+# We can Create the referenced Kubernetes secret by running the following
+sudo kubectl create secret generic dashboard-basic-auth --from-literal=users="$(htpasswd -nb ozan 'USERS_PASSWORD_HERE')" -n kubernetes-dashboard
+# Then create the other resources
+sudo kubectl apply -f dashboard-access-data.yaml
+
 
 
 
