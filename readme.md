@@ -216,6 +216,8 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-http01
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.middlewares: kubernetes-dashboard-auth@kubernetescrd
+    traefik.ingress.kubernetes.io/service.serversscheme: https
+    traefik.ingress.kubernetes.io/service.serverstransport: kubernetes-dashboard-dashboard-transport@kubernetescrd
 spec:
   tls:
   - hosts:
@@ -236,6 +238,16 @@ spec:
 ---
 
 apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: dashboard-transport
+  namespace: kubernetes-dashboard
+spec:
+  insecureSkipVerify: true
+
+---
+
+apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: auth
@@ -249,7 +261,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: dashboard-user
+  name: ozan
   namespace: kubernetes-dashboard
 
 ---
@@ -264,8 +276,10 @@ roleRef:
   name: cluster-admin
 subjects:
 - kind: ServiceAccount
-  name: dashboard-user
+  name: ozan
   namespace: kubernetes-dashboard
+
+---
 
 EOF
 
