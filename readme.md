@@ -196,36 +196,55 @@ sudo kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v2.10/do
 # One final adventure - we will be setting up a web UI to manage the cluster.
 # This entails running a google web UI and creating HTTP basic auth over SSL,
 # and we're just going to hard-code a username/password at this time to keep auth simple.
-sudo kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
-# See the created Pods
-sudo kubectl get pods -n kubernetes-dashboard
-
-# We define our own kind:Service of name:kubernetes-dashboard below, so we delete the pre-existing one
-sudo kubectl delete svc kubernetes-dashboard -n kubernetes-dashboard
-
-
-# We will write down the service account, Ingress controller, and a middleware which checks the password
-# as its own yaml file.
-# The dashboard will end up being accessible at https://dashboard.ozan.jmcateer.com
-
-vim dashboard-access-data.yaml
+sudo kubectl create namespace portainer
+vim portainer-setup.yaml
 cat <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer
+  template:
+    metadata:
+      labels:
+        app: portainer
+    spec:
+      containers:
+      - name: portainer
+        image: portainer/portainer-ce:latest
+        args:
+          - --bind=0.0.0.0:9000
+        ports:
+        - containerPort: 9000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer
+  namespace: portainer
+spec:
+  selector:
+    app: portainer
+  ports:
+  - port: 9000
+    targetPort: 9000
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
+  name: portainer
+  namespace: portainer
   annotations:
+    kubernetes.io/ingress.class: traefik
     cert-manager.io/cluster-issuer: letsencrypt-http01
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.middlewares: kubernetes-dashboard-auth@kubernetescrd
-    traefik.ingress.kubernetes.io/service.serversscheme: http
-    traefik.ingress.kubernetes.io/service.serverstransport: dashboard-transport@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: portainer-auth@kubernetescrd
 spec:
-  tls:
-  - hosts:
-    - dashboard.ozan.jmcateer.com
-    secretName: dashboard-tls
   rules:
   - host: dashboard.ozan.jmcateer.com
     http:
@@ -234,111 +253,35 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: kubernetes-dashboard
+            name: portainer
             port:
-              name: https-dashboard
-
-
+              number: 9000
+  tls:
+  - hosts:
+      - dashboard.ozan.jmcateer.com
+    secretName: portainer-tls
 ---
-
-apiVersion: traefik.containo.us/v1alpha1
-kind: ServersTransport
-metadata:
-  name: dashboard-transport
-  namespace: kubernetes-dashboard
-spec:
-  insecureSkipVerify: true
-
----
-
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: kubernetes-dashboard-auth
-  namespace: kubernetes-dashboard
+  name: portainer-auth
+  namespace: portainer
 spec:
   basicAuth:
-    secret: dashboard-basic-auth
-
+    secret: portainer-basic-auth
 ---
-
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: ozan
-  namespace: kubernetes-dashboard
-
----
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: dashboard-user-dashboard
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: ozan
-  namespace: kubernetes-dashboard
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-spec:
-  selector:
-    k8s-app: kubernetes-dashboard
-  ports:
-    - name: https-dashboard
-      port: 443
-      targetPort: 8443
-#   type: ClusterIP
-
----
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kubernetes-dashboard
-  namespace: kubernetes-dashboard
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      k8s-app: kubernetes-dashboard
-  template:
-    metadata:
-      labels:
-        k8s-app: kubernetes-dashboard
-    spec:
-      containers:
-      - name: kubernetes-dashboard
-        image: kubernetesui/dashboard:v2.7.0
-        ports:
-        - containerPort: 8443
-        args:
-          - --auto-generate-certificates
-          - --enable-skip-login=true
-          - --enable-insecure-login=true
-          - --metrics-provider=k8s
 
 EOF
 
-# We can Create the referenced Kubernetes secret by running the following
-sudo kubectl create secret generic dashboard-basic-auth --from-literal=users="$(htpasswd -nb ozan 'USERS_PASSWORD_HERE')" -n kubernetes-dashboard
-# Then create the other resources
-sudo kubectl apply -f dashboard-access-data.yaml
+# Type in the password you want to the htpasswd command
+sudo kubectl create secret generic portainer-basic-auth --from-literal=users="$(htpasswd -nb ozan 'PLAINTEXT_PASSWORD_HERE')" -n portainer
+sudo kubectl apply -f portainer-setup.yaml
 
+# We can now Login to https://dashboard.ozan.jmcateer.com with the
+# username "ozan" and the password specified above.
+# Note that Portainer has its own accounts; for simplicity we have configured both the HTTP basic auth
+# and the Portainer account to be the same, but this means you'll be signing in twice on first contact.
 
-
-
-# Misc Notes
-kubectl delete deploy kubernetes-dashboard -n kubernetes-dashboard
 
 
 ```
