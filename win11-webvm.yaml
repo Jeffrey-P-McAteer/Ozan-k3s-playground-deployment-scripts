@@ -38,6 +38,7 @@ spec:
             enabled: true
           acpi: {}
         cpu:
+          model: host-passthrough
           cores: 4
         resources:
           requests:
