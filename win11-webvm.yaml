@@ -57,6 +57,8 @@ apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   name: windows11
+  annotations:
+    kubevirt.io/allow-privileged: "true"
 spec:
   running: true
   template:
@@ -179,7 +181,7 @@ data:
       <authorize username="guacadmin" password="guacadmin-NARF">
         <connection name="Example">
           <protocol>rdp</protocol>
-          <param name="hostname">localhost</param>
+          <param name="hostname">win11-rdp</param>
           <param name="port">3389</param>
         </connection>
       </authorize>
