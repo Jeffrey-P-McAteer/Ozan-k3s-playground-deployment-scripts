@@ -15,50 +15,12 @@ spec:
 
 ---
 # ===============================
-# HostPath PV for ISO
-# ===============================
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: win11-iso-pv
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-path
-  hostPath:
-    path: /home/ubuntu/win11.iso
-    type: File
-
----
-# ===============================
-# PVC for ISO
-# ===============================
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: win11-iso
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: local-path
-  volumeName: win11-iso-pv
-
----
-# ===============================
 # Windows 11 VirtualMachine
 # ===============================
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
   name: windows11
-  annotations:
-    kubevirt.io/allow-privileged: "true"
 spec:
   running: true
   template:
@@ -66,15 +28,6 @@ spec:
       labels:
         kubevirt.io/domain: windows11
     spec:
-      # affinity:
-      #   nodeAffinity:
-      #     requiredDuringSchedulingIgnoredDuringExecution:
-      #       nodeSelectorTerms:
-      #         - matchExpressions:
-      #             - key: kubernetes.io/hostname
-      #               operator: In
-      #               values:
-      #                 - <NODE_WITH_ISO>  # <-- Replace with your node
       domain:
         firmware:
           bootloader:
@@ -83,6 +36,7 @@ spec:
         features:
           smm:
             enabled: true
+          acpi: {}
         cpu:
           cores: 4
         resources:
@@ -90,17 +44,27 @@ spec:
             memory: 8Gi
         devices:
           tpm:
-            enabled: true
+            persistent: true
           disks:
             - name: rootdisk
               disk:
-                bus: virtio
-            - name: win11-iso
+                bus: sata  # Changed from virtio - Windows needs drivers for virtio
+            - name: windows-install
               cdrom:
                 bus: sata
+              bootOrder: 1
+            # Add this after you get VirtIO driver ISO
+            # - name: virtio-drivers
+            #   cdrom:
+            #     bus: sata
+            #   bootOrder: 2
           interfaces:
             - name: default
               masquerade: {}
+          inputs:
+            - type: tablet
+              bus: usb
+              name: tablet
       networks:
         - name: default
           pod: {}
@@ -108,9 +72,15 @@ spec:
         - name: rootdisk
           persistentVolumeClaim:
             claimName: win11-pvc
-        - name: win11-iso
-          persistentVolumeClaim:
-            claimName: win11-iso
+        - name: windows-install
+          hostDisk:
+            path: /home/ubuntu/win11.iso
+            type: Disk
+            shared: false
+        # Add this when you have virtio drivers
+        # - name: virtio-drivers
+        #   containerDisk:
+        #     image: quay.io/kubevirt/virtio-container-disk:latest
 
 ---
 # ===============================
@@ -127,6 +97,26 @@ spec:
     - name: rdp
       port: 3389
       targetPort: 3389
+      protocol: TCP
+
+---
+# ===============================
+# VNC Service (for console access)
+# ===============================
+apiVersion: v1
+kind: Service
+metadata:
+  name: win11-vnc
+spec:
+  type: NodePort
+  selector:
+    kubevirt.io/domain: windows11
+  ports:
+    - name: vnc
+      port: 5900
+      targetPort: 5900
+      nodePort: 30590
+      protocol: TCP
 
 ---
 # ===============================
@@ -179,17 +169,20 @@ data:
   user-mapping.xml: |
     <user-mapping>
       <authorize username="guacadmin" password="guacadmin-NARF">
-        <connection name="Example">
+        <connection name="Windows 11 RDP">
           <protocol>rdp</protocol>
           <param name="hostname">win11-rdp</param>
           <param name="port">3389</param>
         </connection>
+        <connection name="Windows 11 VNC">
+          <protocol>vnc</protocol>
+          <param name="hostname">win11-vnc</param>
+          <param name="port">5900</param>
+        </connection>
       </authorize>
     </user-mapping>
+
 ---
-# ===============================
-# Guacamole Web Access Service
-# ===============================
 apiVersion: v1
 kind: Service
 metadata:
@@ -202,10 +195,8 @@ spec:
     - port: 8080
       targetPort: 8080
       nodePort: 30888
+
 ---
-# ===============================
-# Guacamole Ingress controller for w11.ozan.jmcateer.com
-# ===============================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -213,8 +204,6 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: traefik
     cert-manager.io/cluster-issuer: letsencrypt-http01
-    # traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    # traefik.ingress.kubernetes.io/router.middlewares: win11-auth@kubernetescrd
 spec:
   rules:
   - host: w11.ozan.jmcateer.com
@@ -231,12 +220,3 @@ spec:
   - hosts:
       - w11.ozan.jmcateer.com
     secretName: win11-tls
----
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: win11-auth
-spec:
-  basicAuth:
-    secret: win11-basic-auth
----
