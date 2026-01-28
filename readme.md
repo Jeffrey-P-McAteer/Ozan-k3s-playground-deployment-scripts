@@ -297,6 +297,13 @@ sudo kubectl apply -f portainer-setup.yaml
 
 
 
+# 2026-01-27: We added the ability to run VMs as k8s resources.
+kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/v1.7.0/kubevirt-operator.yaml
+kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/v1.7.0/kubevirt-cr.yaml
+
+
+
+
 ```
 
 
