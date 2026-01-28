@@ -176,3 +176,41 @@ spec:
     - port: 8080
       targetPort: 8080
       nodePort: 30888
+---
+# ===============================
+# Guacamole Ingress controller for w11.ozan.jmcateer.com
+# ===============================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: win11
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    cert-manager.io/cluster-issuer: letsencrypt-http01
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: win11-auth@kubernetescrd
+spec:
+  rules:
+  - host: w11.ozan.jmcateer.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: win11
+            port:
+              number: 8080
+  tls:
+  - hosts:
+      - w11.ozan.jmcateer.com
+    secretName: win11-tls
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: win11-auth
+spec:
+  basicAuth:
+    secret: win11-basic-auth
+---

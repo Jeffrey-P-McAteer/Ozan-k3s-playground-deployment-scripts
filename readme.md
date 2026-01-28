@@ -302,7 +302,8 @@ kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/v1.7.0/
 kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/v1.7.0/kubevirt-cr.yaml
 
 
-
+sudo kubectl create secret generic win11-basic-auth --from-literal=users="$(htpasswd -nb user 'PLAINTEXT_PASSWORD_HERE')"
+sudo kubectl apply -f win11-webvm.yaml
 
 ```
 
