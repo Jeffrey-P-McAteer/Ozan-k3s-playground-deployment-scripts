@@ -10,7 +10,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 80Gi
+      storage: 120Gi
   storageClassName: local-path
 
 ---
@@ -64,15 +64,15 @@ spec:
       labels:
         kubevirt.io/domain: windows11
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - <NODE_WITH_ISO>  # <-- Replace with your node
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #         - matchExpressions:
+      #             - key: kubernetes.io/hostname
+      #               operator: In
+      #               values:
+      #                 - <NODE_WITH_ISO>  # <-- Replace with your node
       domain:
         firmware:
           bootloader:
@@ -144,6 +144,10 @@ spec:
       labels:
         app: guacamole
     spec:
+      volumes:
+        - name: guac-config
+          configMap:
+            name: guacamole-config
       containers:
         - name: guacamole
           image: guacamole/guacamole
@@ -152,14 +156,34 @@ spec:
               value: localhost
             - name: GUACD_PORT
               value: "4822"
+            - name: GUACAMOLE_HOME
+              value: /etc/guacamole
           ports:
             - containerPort: 8080
-
+          volumeMounts:
+            - name: guac-config
+              mountPath: /etc/guacamole
         - name: guacd
           image: guacamole/guacd
           ports:
             - containerPort: 4822
 
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guacamole-config
+data:
+  user-mapping.xml: |
+    <user-mapping>
+      <authorize username="guacadmin" password="guacadmin-NARF">
+        <connection name="Example">
+          <protocol>rdp</protocol>
+          <param name="hostname">localhost</param>
+          <param name="port">3389</param>
+        </connection>
+      </authorize>
+    </user-mapping>
 ---
 # ===============================
 # Guacamole Web Access Service
@@ -187,8 +211,8 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: traefik
     cert-manager.io/cluster-issuer: letsencrypt-http01
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.middlewares: win11-auth@kubernetescrd
+    # traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    # traefik.ingress.kubernetes.io/router.middlewares: win11-auth@kubernetescrd
 spec:
   rules:
   - host: w11.ozan.jmcateer.com
@@ -198,7 +222,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: win11
+            name: guacamole-web
             port:
               number: 8080
   tls:
