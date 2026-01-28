@@ -308,6 +308,9 @@ sudo kubectl apply -f win11-webvm.yaml
 export VERSION=$(curl https://storage.googleapis.com/kubevirt-prow/release/kubevirt/kubevirt/stable.txt)
 wget https://github.com/kubevirt/kubevirt/releases/download/${VERSION}/virtctl-${VERSION}-linux-amd64 -O /usr/bin/virtctl
 
+sudo apt install waypipe
+
+virtctl console windows11
 
 ```
 
