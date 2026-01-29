@@ -1,109 +1,48 @@
-# ===============================
-# Root Disk for Windows 11
-# ===============================
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: win11-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 120Gi
-  storageClassName: local-path
-
----
-# ===============================
-# Windows 11 VirtualMachine
-# ===============================
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
-  name: windows11
+  name: win11-vm
 spec:
   running: true
   template:
     metadata:
       labels:
-        kubevirt.io/domain: windows11
+        kubevirt.io/domain: win11-vm
     spec:
       domain:
-        firmware:
-          bootloader:
-            efi:
-              secureBoot: true
-        features:
-          smm:
-            enabled: true
-          acpi: {}
         cpu:
-          model: host-passthrough
           cores: 4
         resources:
           requests:
             memory: 8Gi
+        machine:
+          type: q35
         devices:
-          tpm:
-            persistent: true
           disks:
-            - name: rootdisk
-              disk:
-                bus: sata  # Changed from virtio - Windows needs drivers for virtio
-            - name: windows-install
+            - name: windows-iso
               cdrom:
                 bus: sata
-              bootOrder: 1
-            # Add this after you get VirtIO driver ISO
-            # - name: virtio-drivers
-            #   cdrom:
-            #     bus: sata
-            #   bootOrder: 2
+            - name: windows-disk
+              disk:
+                bus: virtio
           interfaces:
             - name: default
               masquerade: {}
-          inputs:
-            - type: tablet
-              bus: usb
-              name: tablet
       networks:
         - name: default
           pod: {}
       volumes:
-        - name: rootdisk
-          persistentVolumeClaim:
-            claimName: win11-pvc
-        - name: windows-install
+        - name: windows-iso
           hostDisk:
-            path: /home/ubuntu/win11.iso
+            path: /home/ubuntu/boot.iso
             type: Disk
-            shared: false
-        # Add this when you have virtio drivers
-        # - name: virtio-drivers
-        #   containerDisk:
-        #     image: quay.io/kubevirt/virtio-container-disk:latest
+        - name: windows-disk
+          hostDisk:
+            path: /home/ubuntu/vm.qcow2
+            type: Disk
+      terminationGracePeriodSeconds: 0
 
 ---
-# ===============================
-# RDP Service
-# ===============================
-apiVersion: v1
-kind: Service
-metadata:
-  name: win11-rdp
-spec:
-  selector:
-    kubevirt.io/domain: windows11
-  ports:
-    - name: rdp
-      port: 3389
-      targetPort: 3389
-      protocol: TCP
-
----
-# ===============================
-# VNC Service (for console access)
-# ===============================
 apiVersion: v1
 kind: Service
 metadata:
@@ -111,15 +50,14 @@ metadata:
 spec:
   type: NodePort
   selector:
-    kubevirt.io/domain: windows11
+    kubevirt.io/domain: win11-vm
   ports:
     - name: vnc
       port: 5900
       targetPort: 5900
-      nodePort: 30590
-      protocol: TCP
 
 ---
+
 # ===============================
 # Guacamole Deployment
 # ===============================
@@ -172,7 +110,7 @@ data:
       <authorize username="guacadmin" password="guacadmin-NARF">
         <connection name="Windows 11 RDP">
           <protocol>rdp</protocol>
-          <param name="hostname">win11-rdp</param>
+          <param name="hostname">win11-vm</param>
           <param name="port">3389</param>
         </connection>
         <connection name="Windows 11 VNC">
